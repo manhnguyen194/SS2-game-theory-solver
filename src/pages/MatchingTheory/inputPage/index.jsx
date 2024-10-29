@@ -31,27 +31,21 @@ export default function InputPage() {
     const [totalIndividualsNumError, setTotalIndividualsNumError] = useState("");
     const [fitnessFunctionError, setFitnessFunctionError] = useState("");
 
+
+    const [setCharacteristics, setSetCharacteristics] = useState("");
     const {setAppData, setGuideSectionIndex} = useContext(DataContext);
     const {displayPopup} = useContext(PopupContext);
     const [rowNums, setRowNums] = useState(2);
     const [colNums, setColNums] = useState(0);
     const [setEvaluateFunction, setSetEvaluateFunction] = useState(Array.from({length: colNums}, () => ""));
     const [setIndividuals, setSetIndividuals] = useState(Array.from({length: colNums}, () => ""));
-    const [setCharacteristics, setSetCharacteristics] = useState(Array.from({length: colNums}, () => ""));
-
-        //new variables
-        const [numberOfProperties, setNumberOfProperties] = useState(10);
-        const [individualSetIndexes, setIndividualSetIndexes] = useState([0, 1, 2]);
-        const [individualCapacities, setIndividualCapacities] = useState([1, 150, 0]);
-        const [individualProperties, setIndividualProperties] = useState(
-            Array(setNum).fill(Array(numberOfProperties).fill(""))
-        );
-        const [individualRequirements, setIndividualRequirements] = useState(
-            Array(setNum).fill(Array(numberOfProperties).fill(""))
-        );
-        const [individualWeights, setIndividualWeights] = useState(
-            Array(setNum).fill(Array(numberOfProperties).fill(""))
-        );
+//new variables
+        const [numberOfProperties, setNumberOfProperties] = useState("");
+        const [individualProperties, setIndividualProperties] = useState([]);
+        const [individualRequirements, setIndividualRequirements] = useState([]);
+        const [individualWeights, setIndividualWeights] = useState([]);
+        const [individualSetIndexes, setIndividualSetIndexes] = useState([]);
+        const [individualCapacities, setIndividualCapacities] = useState([]);
 
         const [numberOfPropertiesError, setNumberOfPropertiesError] = useState("");
         const [individualSetIndexesError, setIndividualSetIndexesError] = useState("");
@@ -59,6 +53,7 @@ export default function InputPage() {
         const [individualPropertiesError, setIndividualPropertiesError] = useState("");
         const [individualRequirementsError, setIndividualRequirementsError] = useState("");
         const [individualWeightsError, setIndividualWeightsError] = useState("");
+
 
     const [setMany, setSetMany] = useState(Array.from({length: colNums}, () => false));
     const navigate = useNavigate();
@@ -104,7 +99,12 @@ export default function InputPage() {
                         nameOfProblem: problemInfo.problemName,
                         numberOfSets: problemInfo.setNum,
                         numberOfIndividuals: problemInfo.totalNumberOfIndividuals,
-                        characteristics: problemInfo.characteristics,
+                        characteristicsNum: problemInfo.characteristics,
+                        individualSetIndexes: problemInfo.individualSetIndexes,
+                        individualCapacities: problemInfo.individualCapacities,
+                        individualProperties: problemInfo.individualProperties,
+                        individualRequirements: problemInfo.individualRequirements,
+                        individualWeights: problemInfo.individualWeights,
                         individuals: problemInfo.individuals,
                         fitnessFunction: problemInfo.fitnessFunction,
                         evaluateFunctions: problemInfo.setEvaluateFunction,
@@ -126,28 +126,44 @@ export default function InputPage() {
         const totalNumberOfIndividuals = await sheet["B3"]["v"];
         const characteristicNum = await sheet["B4"]["v"];
         const fitnessFunction = await sheet["B5"]["v"];
-        let currentRow = 6 + Number(setNum);
-        const individualSetIndexes = [];
-        const individualCapacities = [];
-        const individualProperties = [];
-        const individualRequirements = [];
-        const individualWeights = [];
-        const setEvaluateFunction = [];
-        const characteristics = [];
 
+        let columnCount = 0;
+        let currentRow = 6 + Number(setNum);
+        let currentIndividual = 0;
+        let characteristics = [];
         let errorMessage = "";
 
         try {
-            // LOAD CHARACTERISTICS
-            for (let i = 0; i < characteristicNum; i++) {
-                const characteristicName = await sheet[XLSX.utils.encode_cell({
-                    c: i + 4, r: currentRow - 1
-                })];
+            // Load number of properties
+            const startingColumn = "E"; // Starting from column E
+            let columnCount = 0;
+            let currentColumnIndex = XLSX.utils.decode_col(startingColumn);
 
-                if (characteristicName) {
-                    characteristics.push(characteristicName["v"]);
+            for (let i = currentColumnIndex; ; i++) {
+                // Create the cell reference for the current column in row 8
+                const cellAddress = XLSX.utils.encode_cell({ c: i, r: currentRow - 1 }); // `r: startingRow - 1` because row start from 0
+                const cell = sheet[cellAddress];
+
+                // Break if cell is empty or undefined
+                if (!cell || !cell.v) {
+                    break;
                 }
+                columnCount++;
+                characteristics = columnCount;
             }
+
+            // LOAD SET
+            const individuals = [];
+            let setEvaluateFunction = [];
+            const row = characteristicNum;
+            const col = 3;
+            let individualNum = null;
+            let argumentCell = null;
+            let individualName = null;
+            let setType = null;
+            let setName = null;
+            let capacityNum = null;
+
             // Load evaluate functions for each set
             for (let j = 0; j < setNum; j++) {
                 const evaluateFunction = sheet[`B${6 + j}`]?.v || "";
@@ -155,61 +171,63 @@ export default function InputPage() {
             }
 
 
-            // Load individuals in parallel arrays
+
             for (let g = 0; g < setNum; g++) {
-                const setName = sheet[`A${currentRow}`]?.v || "";
-                const setType = g === 0 ? 0 : 1; // Assuming types are 0 for Students and 1 for Accommodations
-                const capacityCell = sheet[`C${currentRow}`]?.v;
-
-                // Validate individual number
-                const individualNumCell = sheet[`D${currentRow}`];
-                if (!individualNumCell || typeof individualNumCell.v !== "number") {
-                    errorMessage = `Error loading Set_${g + 1}, row ${currentRow}: Number of individuals is invalid.`;
-                    throw new Error(errorMessage);
+                setName = await sheet[`A${currentRow}`]["v"];
+                setType = await sheet[`B${currentRow}`]["v"];
+                if (g === 0) {
+                    setType = 0;
+                } else if (g === 1) {
+                    setType = 1;
                 }
-                const individualNum = individualNumCell.v;
 
-                // Load each individual
+                individualNum = await sheet[`D${currentRow}`]?.v;
                 for (let i = 0; i < individualNum; i++) {
                     const properties = [];
                     const requirements = [];
                     const weights = [];
 
                     for (let k = 0; k < characteristicNum; k++) {
-                        const propertyCell = sheet[XLSX.utils.encode_cell({ c: k + 4, r: currentRow })]?.v || 0;
-                        const requirementCell = sheet[XLSX.utils.encode_cell({ c: k + 4, r: currentRow + 1 })]?.v || 0;
-                        const weightCell = sheet[XLSX.utils.encode_cell({ c: k + 4, r: currentRow + 2 })]?.v || 0;
-
-                        properties.push(propertyCell);
-                        requirements.push(requirementCell);
-                        weights.push(weightCell);
+                        properties.push(sheet[XLSX.utils.encode_cell({ c: k + 4, r: currentRow })]?.v || 0);
+                        requirements.push(sheet[XLSX.utils.encode_cell({ c: k + 4, r: currentRow + 1 })]?.v || 0);
+                        weights.push(sheet[XLSX.utils.encode_cell({ c: k + 4, r: currentRow + 2 })]?.v || 0);
                     }
-
-                    // Push data into parallel arrays
-                    individualSetIndexes.push(g); // Index representing the set (0, 1, etc.)
-                    individualCapacities.push(capacityCell);
+                    individualSetIndexes.push(g);
                     individualProperties.push(properties);
                     individualRequirements.push(requirements);
                     individualWeights.push(weights);
 
-                    currentRow += 3; // Move to the next individual
-                }
-                currentRow += 1; // Move to the next set
-            }
+                    // Load capacity
+                    const capacityValue = await sheet[`C${currentRow + 1}`]?.v;  // Read the value in column C
+                    if (capacityValue !== undefined && capacityValue !== null) {
+                        individualCapacities.push(capacityValue);  // Push the capacity value
+                    }
 
-                 // Return data in JSON structure format
+                    currentRow += 3;
+                }
+
+                currentRow += 1;
+            }
+        console.log("si: " + individualSetIndexes);
+        console.log("c: " + individualCapacities);
+        console.log("p: " + individualProperties);
+        console.log("r: " + individualRequirements);
+        console.log("w: " + individualWeights);
+
             return {
                 problemName,
-                numberOfSets: setNum,
-                numberOfIndividuals: totalNumberOfIndividuals,
-                numberOfProperties: characteristicNum,
+                characteristicNum,
+                setNum,
+                totalNumberOfIndividuals,
+                characteristics,
                 individualSetIndexes,
                 individualCapacities,
-                individualProperties,
                 individualRequirements,
+                individualProperties,
                 individualWeights,
+                individuals,
                 fitnessFunction,
-                evaluateFunction: setEvaluateFunction,
+                setEvaluateFunction,
             };
         } catch (error) {
             displayPopup("Something went wrong!", errorMessage, true);
@@ -458,10 +476,10 @@ export default function InputPage() {
              * $: set - value (1 or 2) represent set 1 (0) or set 2 (1)
              * $: S(set) - Sum of all payoff scores of "set" evaluate by opposite set
              * $: M(i) - Value of specific matchSet's satisfaction eg: M0 (satisfactory of Individual no 0)
-
+             
              * Supported functions:
              * #: SIGMA{S1} calculate sum of all MatchSet of a belonging set eg: SIGMA{S1}
-
+             
              * Supported mathematical calculations:
              * Name:    Usage
              * 1. absolute       : abs(expression)
@@ -473,10 +491,10 @@ export default function InputPage() {
              * 7. square root: sqrt(expression)
     `, "Hàm đánh giá của set 1 được lấy từ dữ liệu người dùng nhập trên trang input", "Hàm đánh giá của set 2 được lấy từ dữ liệu người dùng nhập trên trang input", "Người dùng nhập capacity của từng đối tượng (ví dụ: nếu A có thể match với 2 người thì capacity bằng 2)", "Set 1 là Set Many do người dùng đã tick trong phần lựa chọn ở trang input", "Set 2 là Set One do người dùng đã tick trong phần lựa chọn ở trang input", `Người dùng nhập chỉ số yêu cầu của từng cá thể
 - Về phần các characteristic của các Individual:
-       + Đối với các characteristic dạng chữ, có thể phân tích thành nhiều input khác nhau không có quy luật(ví dụ như skills có thể có cooking, swimming, drawing,...):
+       + Đối với các characteristic dạng chữ, có thể phân tích thành nhiều input khác nhau không có quy luật(ví dụ như skills có thể có cooking, swimming, drawing,...): 
         Các nhóm cần chia thành từng characteristic theo các input đấy (ví dụ như skills thì sẽ tách ra thành cooking, swimming,... và để thành characteristic riêng biệt)
         và đánh giá bằng điểm số (ví dụ swimming: 10 điểm, cooking: 6 điểm).
-       +  Đối với các characteristic đánh giá theo mức độ (ví dụ như low, medium, high):
+       +  Đối với các characteristic đánh giá theo mức độ (ví dụ như low, medium, high): 
        Các nhóm cần chuyển đổi thành dạng số theo thang điểm 10 và giới hạn các mức độ theo từng mốc điểm.`,];
 
         // Set purple background color and black text for cells B3 to B13
